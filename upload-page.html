@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <link rel="stylesheet" href="http://unpkg.com/iview/dist/styles/iview.css">
+  <script src="https://cdn.bootcss.com/vue/2.5.17-beta.0/vue.min.js"></script>
+  <script src="http://unpkg.com/iview/dist/iview.min.js"></script>
+  <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+  <script src="http://cdn.bootcss.com/blueimp-md5/1.1.0/js/md5.min.js"></script>  
+  <script src="https://cdn.bootcss.com/axios/0.18.0/axios.min.js"></script>
+  <title>Document</title>
+</head>
+<body>
+  <div id="app">
+  <Upload
+    multiple
+    :before-upload="beforeUpload"
+    action="//"
+    type="drag">
+    <div style="padding: 20px 0">
+      <Icon type="ios-cloud-upload" size="52" style="color: #3399ff"></Icon>
+      <p>Click or drag files here to upload</p>
+    </div>
+  </Upload>
+  <i-button @click="onUpload">Upload</i-button>
+  <i-progress :percent="percent" status="active" />
+  </div>
+  <script>
+    var chunkByte = 1 * 1024 * 1024,
+        chunkTotal = 0,
+        currentChunkFile = '',
+        currentChunkNum = 0,
+        chunkNext = 0,
+        md5File = '';
+    function blobSlice (blob, startByte, endByte) {
+      if (blob.slice) {
+        return blob.slice(startByte, endByte);
+      }
+      if (blob.mozSlice) {
+        return blob.mozSlice(startByte, endByte);
+      }
+      if (blob.webkitSlice) {
+        return blob.webkitSlice(startByte, endByte);
+      }
+      return null;
+    }
+    new Vue({
+      el: '#app',
+      data: {
+        percent: 0,
+        file: ''
+      },
+      methods: {
+        beforeUpload (file) {
+          this.file = file;
+          md5File = md5(file);
+          return false
+        },
+        onUpload () {
+          chunkTotal = Math.ceil(this.file.size / chunkByte);
+          this.upload();
+        },
+        async upload () {
+          let vm = this;
+          currentChunkFile = blobSlice(this.file, currentChunkNum * chunkByte, (currentChunkNum++) * chunkByte);
+          let formData = new FormData();
+          formData.append("file", currentChunkFile);
+          formData.append("fileName", this.file.name);
+          formData.append("total", chunkTotal);
+          formData.append("current", currentChunkNum);
+          formData.append("md5File", md5File);
+          const data = await new Promise((resolve) => {
+            axios({
+              url: 'http://localhost:3000/upload',
+              method: 'post',
+              headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+              data: formData
+            }).then(res => {
+              if (res.data.errorCode === 0) {
+                this.percent = parseInt((Number(res.data.data.current) / chunkTotal) * 100);
+                resolve(res.data.data);
+              } else {
+                resolve(false);
+              }
+            });
+          });
+          if (data) {
+            if (Number.parseInt(data.current) === chunkTotal) {
+              axios.post('/upload-merge').then(res => {
+                if (res.data.errorCode === 0) {
+                  iview.Message.success('Upload Success');
+                }
+              });
+            } else {
+              this.upload();
+            }
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
